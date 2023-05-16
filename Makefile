@@ -1,5 +1,5 @@
 test: 
-	@go test -v ./... -cover -race -coverprofile=coverage.txt -covermode=atomic
+	@go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic
 
 unittest:
 	@go test -v -short ./...
