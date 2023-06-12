@@ -56,6 +56,7 @@ type sqlDB struct {
 	replicas         []*sql.DB
 	loadBalancer     DBLoadBalancer
 	stmtLoadBalancer StmtLoadBalancer
+	*sql.DB
 }
 
 // PrimaryDBs return all the active primary DB
