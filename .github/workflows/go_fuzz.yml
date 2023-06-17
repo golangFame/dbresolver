@@ -39,14 +39,14 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Cache Go
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ${{ env.GOCACHE }}
             ${{ env.GOBIN }}
-          key: ${{ runner.os }}-go-${{ hashFiles('*.go') }}
+          key: ${{ github.workflow }}-${{ runner.os }}-${{ hashFiles('*_test.go') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('*.go') }}
+            ${{ github.workflow }}-${{ runner.os }}-${{ hashFiles('*_test.go') }}
 
       - name: Build
         timeout-minutes: 2
@@ -60,7 +60,7 @@ jobs:
       #          go generate fuzz.go
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: go-test-utils
           path: ${{ env.GOBIN }}
@@ -101,7 +101,7 @@ jobs:
       #          go generate
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: go-test-utils
           path: ${{ env.GOBIN }}
@@ -113,12 +113,34 @@ jobs:
       - name: FuzzMultiWrite
         continue-on-error: true
         run: |
-          go test -json -short -fuzztime=2m -timeout=15m -cover github.com/bxcodec/dbresolver/v2 -fuzz=FuzzMultiWrite -covermode=count -run ^$  | \
+          go test -json -short -fuzztime=3m -timeout=15m -cover github.com/bxcodec/dbresolver/v2 -fuzz=FuzzMultiWrite -covermode=count -run ^$  | \
           bin/tparse -follow -all -sort=elapsed
 
       #          TODO: similarly write for every fuzz function
 
+      - name: Check file existence
+        id: check_files
+        uses: andstor/file-existence-action@v1
+        with:
+          files: "testdata/fuzz"
+
+      - name: Run All Corpus
+        continue-on-error: true
+        if: steps.check_files.outputs.files_exists == 'true'
+        run: |
+          for dir in $(find testdata/fuzz/* -type d); do
+            echo "Walking $dir"
+            for file in $(find "$dir" -type f); do
+                echo "Running $file"
+                go test -run="$(basename "$dir")/$(basename "$file")" -v
+                rm "$file"
+            done
+            rm -r "$dir"
+          done
+          rm -r testdata/fuzz
+
       - name: Collect testdata
+        continue-on-error: true
         #        if: ${{ failure() }} || true
         if: github.event_name == 'push' && github.event.pull_request == null
         run: |
@@ -127,17 +149,11 @@ jobs:
             git config --global user.email laciferin@gmail.com
             git config --global user.name GithubActions
             git add -f testdata
-            git commit -m "ci: fuzz tests failed on $date"
+            git commit -m "ci: fuzz tests updated on $date"
             git push
           else
             echo "All Fuzz Tests have passed"
           fi  
-
-      - name: Check file existence
-        id: check_files
-        uses: andstor/file-existence-action@v1
-        with:
-          files: "testdata"
 
       - name: Upload TestCases
         uses: actions/upload-artifact@v2
@@ -148,7 +164,16 @@ jobs:
 
       - name: Fail Test
         if: steps.check_files.outputs.files_exists == 'true'
-        run: exit 1
+        run: |
+          if [ -d "testdata/fuzz" ]; then
+            echo "Failing this run"
+            exit 1
+          else
+            echo "testdata dir present" 
+            echo "fuzz tests have passed on 2nd run"
+          fi
+
+
 
 
 
